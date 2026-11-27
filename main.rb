@@ -13,6 +13,8 @@ PLAYER_CLIP_WIDTH = 80
 ZOMBIE_CLIP_WIDTH = 125
 
 WALK_SPEED = 12
+SHOT_SPEED = 42
+SHOT_COOLDOWN_FRAMES = 4
 
 Y_LEVELS = [180, 230, 280, 320]
 Y_LEVEL_START = 0
@@ -59,6 +61,20 @@ class Zombie
     def move
         @sprite.x = (@sprite.x + @speed) % Window.width
     end
+
+    def sprite_x
+        @sprite.x
+    end
+
+    def hit_by?(shot)
+        @y_level == shot.level &&
+            shot.right >= @sprite.x + WIDTH * 0.25 &&
+            shot.left <= @sprite.x + WIDTH * 0.75
+    end
+
+    def remove
+        @sprite.remove
+    end
 end
 
 
@@ -81,14 +97,52 @@ atlas = Sprite.new(
 )
 
 
+class Shot
+    attr_reader :level, :left, :right, :direction
+
+    def initialize(player, direction)
+        @level = player.z
+        @direction = direction
+        @shape = Rectangle.new(x: player.x + player.width * (direction == 1 ? 0.8 : 0.2),
+            y: player.y + player.height * 0.48, width: 14, height: 4,
+            color: 'yellow', z: @level + 10)
+        @left = @shape.x
+        @right = @shape.x + @shape.width
+    end
+
+    def move
+        previous = @shape.x
+        @shape.x += SHOT_SPEED * @direction
+        @left = [previous, @shape.x].min
+        @right = [previous, @shape.x].max + @shape.width
+    end
+
+    def outside?
+        @shape.x > Window.width || @shape.x + @shape.width < 0
+    end
+
+    def remove
+        @shape.remove
+    end
+end
+
 class GameScreen
     attr_writer :zombies
 
     def initialize()
+        @shots = []
+        @last_shot_frame = -SHOT_COOLDOWN_FRAMES
         y_level=-1
         @zombies = Array.new(4).map do 
             Zombie.new(y_level+1, Window.width-(rand(100..300)), y_level+=1)
         end 
+    end
+
+    def shoot(player, direction)
+        return if Window.frames - @last_shot_frame < SHOT_COOLDOWN_FRAMES
+
+        @shots << Shot.new(player, direction)
+        @last_shot_frame = Window.frames
     end
 
     def update
@@ -99,10 +153,23 @@ class GameScreen
             end
         end
 
+        @shots.delete_if do |shot|
+            shot.move
+            targets = @zombies.select { |zombie| zombie.hit_by?(shot) }
+            target = targets.min_by { |zombie| shot.direction == 1 ? zombie.sprite_x : -zombie.sprite_x }
+            if target
+                target.remove
+                @zombies.delete(target)
+            end
+            finished = target || shot.outside?
+            shot.remove if finished
+            !!finished
+        end
     end
 end
 
 current_screen = GameScreen.new()
+facing = 1
 
 update do
     current_screen.update
@@ -111,6 +178,7 @@ end
 on :key_held do |event|
     case event.key
     when 'left'
+        facing = -1
         atlas.play animation: :walk, flip: :horizontal
         if atlas.x > 0
             atlas.x -= WALK_SPEED
@@ -120,6 +188,7 @@ on :key_held do |event|
             end
         end
     when 'right'
+        facing = 1
         atlas.play animation: :walk
        if atlas.x < (Window.width - atlas.width) 
             atlas.x += WALK_SPEED
@@ -143,14 +212,15 @@ on :key_held do |event|
             atlas.play animation: :crounch
         end
     when 'space'
-        atlas.play animation: :shoot
+        atlas.play animation: :shoot, flip: (facing == -1 ? :horizontal : nil)
+        current_screen.shoot(atlas, facing)
     when 'z'
         atlas.play animation: :die, loop: false
     end      
 end
 
 on :key_up do
-    atlas.play animation: :idle, loop: true
+    atlas.play animation: :idle, loop: true, flip: (facing == -1 ? :horizontal : nil)
 end
 
 show
