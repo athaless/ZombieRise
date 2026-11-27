@@ -103,8 +103,13 @@ class Shot
     def initialize(player, direction)
         @level = player.z
         @direction = direction
-        @shape = Rectangle.new(x: player.x + player.width * (direction == 1 ? 0.8 : 0.2),
-            y: player.y + player.height * 0.48, width: 14, height: 4,
+        # Muzzle coordinates relative to the 80px shooting sprite, mirrored when facing left.
+        muzzle_x = player.x + player.width * (direction == 1 ? 0.72 : 0.28)
+        muzzle_y = player.y + player.height * 0.33
+        shot_width = 14
+        shot_height = 4
+        @shape = Rectangle.new(x: muzzle_x - (direction == -1 ? shot_width : 0),
+            y: muzzle_y - shot_height / 2.0, width: shot_width, height: shot_height,
             color: 'yellow', z: @level + 10)
         @left = @shape.x
         @right = @shape.x + @shape.width
